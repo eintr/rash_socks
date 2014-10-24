@@ -67,25 +67,25 @@ socks4_protocol(name_resolv, Client_socket, Arg, Context) ->
 
 socks4_protocol(try_connect, Client_socket, Arg, Context) ->
 	Dsockaddr = {context_get(daddr, Context), context_get(dport, Context)},
-	io:format("try_connect to ~p ... ", [Dsockaddr]),
+	%io:format("try_connect to ~p ... ", [Dsockaddr]),
 	case queuectl:connect_request(Dsockaddr) of
 		true ->
 			case gen_tcp:connect(context_get(daddr, Context), context_get(dport, Context), [{active, false}, binary], 3000) of
 				{ok, Socket} ->
-					queuectl:connect_ok(context_get(Dsockaddr, Context)),
-					io:format("ok!\n"),
+					queuectl:connect_ok(Dsockaddr),
+					%io:format("ok!\n"),
 					socks4_protocol(send_grant, Client_socket, Arg, Context++[{server, Socket}]);
 				{error, eagain} ->
-					queuectl:connect_timeout(context_get(Dsockaddr, Context)),
-					io:format("timedout!\n"),
+					queuectl:connect_timeout(Dsockaddr),
+					%io:format("timedout!\n"),
 					socks4_protocol(send_reject, Client_socket, Arg, Context++[{reason, "timedout"}]);
 				{error, Reason} ->
-					queuectl:connect_fail(context_get(Dsockaddr, Context)),
-					io:format("failed!\n"),
+					queuectl:connect_fail(Dsockaddr),
+					%io:format("failed!\n"),
 					socks4_protocol(send_reject, Client_socket, Arg, Context++[{reason, Reason}])
 			end;
 		false ->
-			io:format("Connection to ~p rejected by queue ctl.\n", [context_get(daddr, Context)]),
+			io:format("Connection to ~p rejected by queue ctl.\n", [Dsockaddr]),
 			socks4_protocol(send_reject, Client_socket, Arg, Context++[{reason, "Queue control reject"}])
 	end;
 	
@@ -112,13 +112,22 @@ socks4_protocol(relay, Client_socket, Arg, Context) ->
 	socks4_protocol(relay_loop, Client_socket, Arg, Context ++ [{worker1, PID1}, {worker2, PID2}]);
 
 socks4_protocol(relay_loop, Client_socket, Arg, Context) ->
-	%io:format("."),
-	receive
-		{relayerror, Reason} ->
-			io:format("relayerror: ~p\n", [Reason]),
+	Worker1 = context_get(worker1, Context),
+	Worker2 = context_get(worker2, Context),
+	if
+		(Worker1 == over) and (Worker2 == over) ->
 			socks4_protocol(term, Client_socket, Arg, Context);
-		_ ->
-			socks4_protocol(term, Client_socket, Arg, Context)
+		true ->
+			receive
+				{over, Worker1, Reason} ->
+					io:format("relayerror: ~p\n", [Reason]),
+					socks4_protocol(term, Client_socket, Arg, lists:keyreplace(worker1, 1, Context, {worker1, over}));
+				{over, Worker2, Reason} ->
+					io:format("relayerror: ~p\n", [Reason]),
+					socks4_protocol(term, Client_socket, Arg, lists:keyreplace(worker2, 1, Context, {worker1, over}));
+				_ ->
+					socks4_protocol(term, Client_socket, Arg, Context)
+			end
 	end;
 
 socks4_protocol(term, _Client_socket, _Arg, _Context) ->
@@ -134,12 +143,16 @@ relay_socket(Socket1, Socket2, Arg, PPID) ->
 				ok ->
 					%io:format("Sent: ~p\n", [Data]),
 					relay_socket(Socket1, Socket2, Arg, PPID);
+				{error, closed} ->
+					PPID ! {over, self()};
 				{error, Reason} ->
 					io:format("Sent error: ~s\n", [Reason]),
-					PPID ! {relayerror, "Send error: "++Reason}
+					PPID ! {over, self(), Reason}
 			end;
+		{error, closed} ->
+			PPID ! {over, self()};
 		{error, Reason} ->
-			PPID ! {relayerror, "Receive error: "++Reason}
+			PPID ! {over, self(), Reason}
 	end.
 
 get_seg(Socket) ->
