@@ -12,6 +12,7 @@ start() ->
 	start(?DEFAULT_PORT).
 
 start(Port) ->
+	queuectl:create(),
 	Pid = simple_tcp_server:create(Port, {?MODULE, socks4_callback, []}),
 	loop(Pid).
 
@@ -65,17 +66,29 @@ socks4_protocol(name_resolv, Client_socket, Arg, Context) ->
 	end;
 
 socks4_protocol(try_connect, Client_socket, Arg, Context) ->
-	%io:format("try_connect to ~p:~p ", [context_get(daddr, Context), context_get(dport, Context)]),
-	case gen_tcp:connect(context_get(daddr, Context), context_get(dport, Context), [{active, false}, binary]) of
-		{ok, Socket} ->
-			%io:format("ok!\n"),
-			socks4_protocol(send_grant, Client_socket, Arg, Context++[{server, Socket}]);
-		{error, Reason} ->
-			io:format("failed!\n"),
-			socks4_protocol(send_reject, Client_socket, Arg, Context++[{reason, Reason}])
+	Dsockaddr = {context_get(daddr, Context), context_get(dport, Context)},
+	io:format("try_connect to ~p ... ", [Dsockaddr]),
+	case queuectl:connect_request(Dsockaddr) of
+		true ->
+			case gen_tcp:connect(context_get(daddr, Context), context_get(dport, Context), [{active, false}, binary], 3000) of
+				{ok, Socket} ->
+					queuectl:connect_ok(context_get(Dsockaddr, Context)),
+					io:format("ok!\n"),
+					socks4_protocol(send_grant, Client_socket, Arg, Context++[{server, Socket}]);
+				{error, eagain} ->
+					queuectl:connect_timeout(context_get(Dsockaddr, Context)),
+					io:format("timedout!\n"),
+					socks4_protocol(send_reject, Client_socket, Arg, Context++[{reason, "timedout"}]);
+				{error, Reason} ->
+					queuectl:connect_fail(context_get(Dsockaddr, Context)),
+					io:format("failed!\n"),
+					socks4_protocol(send_reject, Client_socket, Arg, Context++[{reason, Reason}])
+			end;
+		false ->
+			io:format("Connection to ~p rejected by queue ctl.\n", [context_get(daddr, Context)]),
+			socks4_protocol(send_reject, Client_socket, Arg, Context++[{reason, "Queue control reject"}])
 	end;
 	
-
 socks4_protocol(send_grant, Client_socket, Arg, Context) ->
 	%io:format("send_grant\n"),
 	Dport = context_get(dport, Context),
