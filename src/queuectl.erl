@@ -41,35 +41,35 @@ connect_ok(Key) ->
 	receive
 		{ok, Pid} ->
 			Pid ! {connect_ok, self()};
-		{error, Reason} ->
-			{error, Reason}
+		{error, _Reason} ->
+			ignore
 	end,
 	true.
 
 connect_fail(Key) ->
-	io:format("connect_fail(~p)\n", [Key]),
+	%io:format("connect_fail(~p)\n", [Key]),
 	qdict ! {addr2pid, self(), Key},
 	receive
 		{ok, Pid} ->
 			Pid ! {connect_fail, self()};
-		{error, Reason} ->
-			{error, Reason}
+		{error, _Reason} ->
+			ignore
 	end,
 	true.
 
 connect_timeout(Key) ->
-	io:format("connect_timeout(~p)\n", [Key]),
+	%io:format("connect_timeout(~p)\n", [Key]),
 	qdict ! {addr2pid, self(), Key},
 	receive
 		{ok, Pid} ->
 			Pid ! {connect_timeout, self()};
-		{error, Reason} ->
-			{error, Reason}
+		{error, _Reason} ->
+			ignore
 	end,
 	true.
 
 connect_request(Key) ->
-	io:format("connect_request(~p)\n", [Key]),
+	%io:format("connect_request(~p)\n", [Key]),
 	qdict ! {addr2pid, self(), Key},
 	receive
 		{ok, Pid} ->
@@ -78,7 +78,6 @@ connect_request(Key) ->
 				Reply -> Reply
 			end;
 		{error, _Reason} ->
-			io:format("Send {register...}\n"),
 			qdict ! {register, self(), {Key, spawn(?MODULE, addr_server_start, [Key, self()])}},
 			true
 	end.
@@ -86,16 +85,8 @@ connect_request(Key) ->
 addr_server_start(Server, Pid) ->
 	addr_server_loop(Server, {[{Pid, timestamp()}], 1, 3000}).
 
-%addr_server_loop(Server, {[], EstDelay, _MaxDelay}) ->
-%	if 
-%		EstDelay>0 ->
-%			io:format("Server for ~p exit for queue is empty, EstDelay=~pms.\n", [Server, EstDelay]);
-%		true ->
-%			true
-%	end,
-%	qdict ! {unregister, self(), Server};
-addr_server_loop(Server, {Queue, EstDelay, MaxDelay}=OldCFG) ->
-	io:format("Server ~p: EstDelay=~p, queue=~p\n", [Server, EstDelay, Queue]),
+addr_server_loop(Server, {Queue, EstDelay, MaxDelay}=OldContext) ->
+	%io:format("Server ~p: EstDelay=~p, queuelen=~p\n", [Server, EstDelay, length(Queue)]),
 	receive
 		{set, _From, {maxdelay, Value}} ->
 			NewQueue = adjust_queue(Queue, EstDelay, Value),
@@ -107,10 +98,10 @@ addr_server_loop(Server, {Queue, EstDelay, MaxDelay}=OldCFG) ->
 					addr_server_loop(Server, {Queue++[{From, timestamp()}], EstDelay, MaxDelay});
 				EstDelay < 0 ->		% Server is unavailable.
 					From ! false,
-					addr_server_loop(Server, OldCFG);
+					addr_server_loop(Server, OldContext);
 				EstDelay*length(Queue) > MaxDelay ->	% Queue is too long.
 					From ! false,
-					addr_server_loop(Server, OldCFG);
+					addr_server_loop(Server, OldContext);
 				true ->
 					From ! true,	% Server is OK
 					addr_server_loop(Server, {Queue++[{From, timestamp()}], EstDelay, MaxDelay})
@@ -119,10 +110,9 @@ addr_server_loop(Server, {Queue, EstDelay, MaxDelay}=OldCFG) ->
 			case lists:keyfind(From, 1, Queue) of
 				{From, Timestamp} ->
 					Delay = timestamp() - Timestamp,
-					io:format("Server ~p is OK: Delay = ~p-~p=~p\n", [Server, timestamp(), Timestamp, Delay]),
 					addr_server_loop(Server, {lists:keydelete(From, 1, Queue), (EstDelay+Delay)/2, MaxDelay});
-				Msg -> 
-					io:format("Process ~p is not found in queue of ~p! Reply = ~p\n", [From, Server, Msg]),
+				false -> 
+					io:format("Process ~p is not found in queue of ~p, ignored\n", [From, Server]),
 					ignore
 			end;
 		{connect_fail, From} ->
@@ -140,7 +130,7 @@ addr_server_loop(Server, {Queue, EstDelay, MaxDelay}=OldCFG) ->
 		Msg ->
 			io:format("addr_server: Unknown message: ~p\n", [Msg])
 	end,
-	addr_server_loop(Server, OldCFG).
+	addr_server_loop(Server, OldContext).
 
 adjust_queue(Queue, _EstDelay, MaxDelay) ->
 	F = fun ({SocksPid, Timestamp}) ->
