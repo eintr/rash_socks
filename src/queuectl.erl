@@ -110,7 +110,13 @@ addr_server_loop(Server, {Queue, EstDelay, MaxDelay}=OldContext) ->
 			case lists:keyfind(From, 1, Queue) of
 				{From, Timestamp} ->
 					Delay = timestamp() - Timestamp,
-					addr_server_loop(Server, {lists:keydelete(From, 1, Queue), (EstDelay+Delay)/2, MaxDelay});
+					if
+						EstDelay == 0 ->
+							NextDelay = (EstDelay+Delay)/2;
+						true ->
+							NextDelay = Delay
+					end.
+					addr_server_loop(Server, {lists:keydelete(From, 1, Queue), NextDelay, MaxDelay});
 				false -> 
 					io:format("Process ~p is not found in queue of ~p, ignored\n", [From, Server]),
 					ignore
@@ -118,7 +124,7 @@ addr_server_loop(Server, {Queue, EstDelay, MaxDelay}=OldContext) ->
 		{connect_fail, From} ->
 			case lists:keyfind(From, 1, Queue) of
 				{From, _Timestamp} ->
-					addr_server_loop(Server, {lists:keydelete(From, 1, Queue), EstDelay*2, MaxDelay});
+					addr_server_loop(Server, {lists:keydelete(From, 1, Queue), (EstDelay+1)*2, MaxDelay});
 				_ -> ignore
 			end;
 		{connect_timeout, From} ->
