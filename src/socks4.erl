@@ -78,7 +78,7 @@ socks4_protocol(try_connect, Client_socket, Arg, Context) ->
 					queuectl:connect_ok(Dsockaddr),
 					%io:format("ok!\n"),
 					socks4_protocol(send_grant, Client_socket, Arg, Context++[{server, Socket}]);
-				{error, eagain} ->
+				{error, timeout} ->
 					queuectl:connect_timeout(Dsockaddr),
 					%io:format("timedout!\n"),
 					socks4_protocol(send_reject, Client_socket, Arg, Context++[{reason, "timedout"}]);
