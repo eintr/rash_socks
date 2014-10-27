@@ -115,7 +115,7 @@ addr_server_loop(Server, {Queue, EstDelay, MaxDelay}=OldContext) ->
 							NextDelay = (EstDelay+Delay)/2;
 						true ->
 							NextDelay = Delay
-					end.
+					end,
 					addr_server_loop(Server, {lists:keydelete(From, 1, Queue), NextDelay, MaxDelay});
 				false -> 
 					io:format("Process ~p is not found in queue of ~p, ignored\n", [From, Server]),
