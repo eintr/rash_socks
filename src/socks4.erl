@@ -11,6 +11,9 @@
 start() ->
 	start(?DEFAULT_PORT).
 
+start(Arglist) when is_list(Arglist) ->
+	[Port|_] = Arglist,
+	start(list_to_integer(atom_to_list(Port)));
 start(Port) ->
 	queuectl:create(),
 	Pid = simple_tcp_server:create(Port, {?MODULE, socks4_callback, []}),
