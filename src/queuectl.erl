@@ -127,6 +127,12 @@ addr_server_loop(Server, {Queue, EstDelay, MaxDelay}=OldContext) ->
 					addr_server_loop(Server, {lists:keydelete(From, 1, Queue), EstDelay*1.6, MaxDelay});
 				_ -> ignore
 			end;
+		{receive_timeout, _From} ->
+			io:format("addr_server: receive_timeout not implemented, yet.\n");
+		{send_timeout, _From} ->
+			io:format("addr_server: send_timeout not implemented, yet.\n");
+		{closed, _From} ->
+			io:format("addr_server: closed not implemented, yet.\n");
 		Msg ->
 			io:format("addr_server: Unknown message: ~p\n", [Msg])
 	end,
