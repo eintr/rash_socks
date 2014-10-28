@@ -1,20 +1,17 @@
 -module(queuectl).
 
--export([create/0, report_status/1, connect_request/1, connect_ok/1, connect_fail/1, connect_timeout/1]).
+-export([create/1, report_status/1, connect_request/1, connect_ok/1, connect_fail/1, connect_timeout/1]).
 
 -export([addr_server_start/2, start/1]).
-
-create() ->
-	create([]).
 
 create(Config) ->
 	register(qdict, spawn_link(?MODULE, start, [Config])).
 
-start(_Config) ->
+start(Config) ->
 	process_flag(priority, high),
-	loop(dict:new()).
+	loop(dict:new(), Config).
 
-loop(Dict) ->
+loop(Dict, Config) ->
 	%io:format("qdict is now: ~p\n", [Dict]),
 	receive
 		{addr2pid, From, Addr} ->
@@ -22,17 +19,17 @@ loop(Dict) ->
 				{ok, Pid} ->
 					From ! {ok, Pid},
 					%io:format("~p is at ~p\n", [Addr, Pid]),
-					loop(Dict);
+					loop(Dict, Config);
 				error ->
 					%io:format("~p is not registered!\n", [Addr]),
 					From ! {error, "Not found"},
-					loop(Dict)
+					loop(Dict, Config)
 			end;
 		{register, _From, {Addr, Pid}} ->
 			%io:format("Got register message, store {~p, ~p}\n", [Addr, Pid]),
-			loop(dict:store(Addr, Pid, Dict));
+			loop(dict:store(Addr, Pid, Dict), Config);
 		{unregister, _From, Addr} ->
-			loop(dict:erase(Addr, Dict))
+			loop(dict:erase(Addr, Dict), Config)
 	end.
 
 connect_ok(Key) ->
@@ -83,7 +80,7 @@ connect_request(Key) ->
 	end.
 
 report_status(Server) ->
-	qdict ! {addr2pid, self(), Key},
+	qdict ! {addr2pid, self(), Server},
 	receive
 		{ok, Pid} ->
 			Pid ! {report, self()},
@@ -91,7 +88,7 @@ report_status(Server) ->
 				Reply -> Reply
 			end;
 		{error, _Reason} ->
-			qdict ! {register, self(), {Key, spawn(?MODULE, addr_server_start, [Key, self()])}},
+			qdict ! {register, self(), {Server, spawn(?MODULE, addr_server_start, [Server, self()])}},
 			true
 	end.
 

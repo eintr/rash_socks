@@ -1,29 +1,10 @@
 -module(socks4).
 
--export([start/0, start/1]).
-
 -export([socks4_callback/2, relay_socket/4]).
 
 -include_lib("kernel/include/inet.hrl").
 
 -define(DEFAULT_PORT, 1080).
-
-start() ->
-	start(?DEFAULT_PORT).
-
-start(Arglist) when is_list(Arglist) ->
-	[Port|_] = Arglist,
-	start(list_to_integer(atom_to_list(Port)));
-start(Port) ->
-	queuectl:create(),
-	Pid = simple_tcp_server:create(Port, {?MODULE, socks4_callback, []}),
-	loop(Pid).
-
-loop(Pid) ->
-	receive
-		_ -> ok
-	end,
-	loop(Pid).
 
 socks4_callback(Client_socket, Arg) ->
 	%io:format("Got a connection.\n"),
