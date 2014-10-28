@@ -88,9 +88,9 @@ addr_server_start(Server, Pid) ->
 addr_server_loop(Server, {Queue, EstDelay, MaxDelay}=OldContext) ->
 	%io:format("Server ~p: EstDelay=~p, queuelen=~p\n", [Server, EstDelay, length(Queue)]),
 	receive
-		{set, _From, {maxdelay, Value}} ->
-			NewQueue = adjust_queue(Queue, EstDelay, Value),
-			addr_server_loop(Server, {NewQueue, EstDelay, Value});
+		{adjust, _From} ->
+			NewQueue = adjust_queue(Queue, timestamp(), MaxDelay),
+			addr_server_loop(Server, {NewQueue, EstDelay, MaxDelay});
 		{connect_request, From} ->
 			if
 				length(Queue) == 0 ->
@@ -144,18 +144,15 @@ addr_server_loop(Server, {Queue, EstDelay, MaxDelay}=OldContext) ->
 	end,
 	addr_server_loop(Server, OldContext).
 
-adjust_queue(Queue, _EstDelay, MaxDelay) ->
-	F = fun ({SocksPid, Timestamp}) ->
-		D = timestamp() - Timestamp,
-		if
-			D > MaxDelay ->	% Expired.
-				exit(SocksPid ,"Connecting was timed out"),
-				false;
-			true ->
-				true
-		end
-	end,
-	lists:filter(F, Queue).
+adjust_queue([{SocksPid, Timestamp}|T], Now, MaxDelay) ->
+	D = Now - Timestamp,
+	if
+		D > MaxDelay ->	% Expired.
+			exit(SocksPid ,"Connecting was timed out"),
+			adjust_queue([T], Now, MaxDelay);
+		true ->
+			T
+	end.
 
 timestamp() ->	% in milliseconds
 	{MegaSecs, Secs, MicroSecs} = now(),
