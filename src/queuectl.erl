@@ -1,6 +1,6 @@
 -module(queuectl).
 
--export([create/0, connect_request/1, connect_ok/1, connect_fail/1, connect_timeout/1]).
+-export([create/0, report_status/1, connect_request/1, connect_ok/1, connect_fail/1, connect_timeout/1]).
 
 -export([addr_server_start/2, start/1]).
 
@@ -82,12 +82,28 @@ connect_request(Key) ->
 			true
 	end.
 
+report_status(Server) ->
+	qdict ! {addr2pid, self(), Key},
+	receive
+		{ok, Pid} ->
+			Pid ! {report, self()},
+			receive
+				Reply -> Reply
+			end;
+		{error, _Reason} ->
+			qdict ! {register, self(), {Key, spawn(?MODULE, addr_server_start, [Key, self()])}},
+			true
+	end.
+
 addr_server_start(Server, Pid) ->
 	addr_server_loop(Server, {[{Pid, timestamp()}], 1, 3000}).
 
 addr_server_loop(Server, {Queue, EstDelay, MaxDelay}=OldContext) ->
 	%io:format("Server ~p: EstDelay=~p, queuelen=~p\n", [Server, EstDelay, length(Queue)]),
 	receive
+		{report, From} ->
+			From ! {Server, {Queue, EstDelay, MaxDelay}},
+			addr_server_loop(Server, {Queue, EstDelay, MaxDelay});
 		{adjust, _From} ->
 			NewQueue = adjust_queue(Queue, timestamp(), MaxDelay),
 			addr_server_loop(Server, {NewQueue, EstDelay, MaxDelay});
