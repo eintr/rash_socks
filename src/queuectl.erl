@@ -25,6 +25,17 @@ loop(Dict, Config) ->
 					From ! {error, "Not found"},
 					loop(Dict, Config)
 			end;
+		{create, From, Addr} ->
+			case dict:find(Addr, Dict) of
+				{ok, _Pid} ->
+					%io:format("addr_server for ~p is already running: ~p.\n", [Addr, Pid]),
+					loop(Dict, Config);
+				error ->
+					%io:format("~p is not registered!\n", [Addr]),
+					Pid = spawn(?MODULE, addr_server_start, [Addr, Config]),
+					From ! ok,
+					loop(dict:store(Addr, Pid, Dict), Config)
+			end;
 		{register, _From, {Addr, Pid}} ->
 			%io:format("Got register message, store {~p, ~p}\n", [Addr, Pid]),
 			loop(dict:store(Addr, Pid, Dict), Config);
@@ -75,8 +86,11 @@ connect_request(Key) ->
 				Reply -> Reply
 			end;
 		{error, _Reason} ->
-			qdict ! {register, self(), {Key, spawn(?MODULE, addr_server_start, [Key, self()])}},
-			true
+			qdict ! {create, self(), Key},
+			receive
+				_ -> true
+			end,
+			connect_request(Key)
 	end.
 
 report_status(Server) ->
@@ -92,32 +106,33 @@ report_status(Server) ->
 			true
 	end.
 
-addr_server_start(Server, Pid) ->
-	addr_server_loop(Server, {[{Pid, timestamp()}], 1, 3000}).
+addr_server_start(Server, Config) ->
+	process_flag(priority, high),
+	addr_server_loop(Server, Config, {[], 1, 3000}).
 
-addr_server_loop(Server, {Queue, EstDelay, MaxDelay}=OldContext) ->
+addr_server_loop(Server, Config, {Queue, EstDelay, MaxDelay}=OldContext) ->
 	%io:format("Server ~p: EstDelay=~p, queuelen=~p\n", [Server, EstDelay, length(Queue)]),
 	receive
 		{report, From} ->
 			From ! {Server, {Queue, EstDelay, MaxDelay}},
-			addr_server_loop(Server, {Queue, EstDelay, MaxDelay});
+			addr_server_loop(Server, Config, {Queue, EstDelay, MaxDelay});
 		{adjust, _From} ->
 			NewQueue = adjust_queue(Queue, timestamp(), MaxDelay),
-			addr_server_loop(Server, {NewQueue, EstDelay, MaxDelay});
+			addr_server_loop(Server, Config, {NewQueue, EstDelay, MaxDelay});
 		{connect_request, From} ->
 			if
 				length(Queue) == 0 ->
 					From ! true,	% Try
-					addr_server_loop(Server, {Queue++[{From, timestamp()}], EstDelay, MaxDelay});
+					addr_server_loop(Server, Config, {Queue++[{From, timestamp()}], EstDelay, MaxDelay});
 				EstDelay < 0 ->		% Server is unavailable.
 					From ! false,
-					addr_server_loop(Server, OldContext);
+					addr_server_loop(Server, Config, OldContext);
 				EstDelay*length(Queue) > MaxDelay ->	% Queue is too long.
 					From ! false,
-					addr_server_loop(Server, OldContext);
+					addr_server_loop(Server, Config, OldContext);
 				true ->
 					From ! true,	% Server is OK
-					addr_server_loop(Server, {Queue++[{From, timestamp()}], EstDelay, MaxDelay})
+					addr_server_loop(Server, Config, {Queue++[{From, timestamp()}], EstDelay, MaxDelay})
 			end;
 		{connect_ok, From} ->
 			case lists:keyfind(From, 1, Queue) of
@@ -129,7 +144,7 @@ addr_server_loop(Server, {Queue, EstDelay, MaxDelay}=OldContext) ->
 						true ->
 							NextDelay = Delay
 					end,
-					addr_server_loop(Server, {lists:keydelete(From, 1, Queue), NextDelay, MaxDelay});
+					addr_server_loop(Server, Config, {lists:keydelete(From, 1, Queue), NextDelay, MaxDelay});
 				false -> 
 					io:format("Process ~p is not found in queue of ~p, ignored\n", [From, Server]),
 					ignore
@@ -137,13 +152,13 @@ addr_server_loop(Server, {Queue, EstDelay, MaxDelay}=OldContext) ->
 		{connect_fail, From} ->
 			case lists:keyfind(From, 1, Queue) of
 				{From, _Timestamp} ->
-					addr_server_loop(Server, {lists:keydelete(From, 1, Queue), (EstDelay+1)*2, MaxDelay});
+					addr_server_loop(Server, Config, {lists:keydelete(From, 1, Queue), (EstDelay+1)*2, MaxDelay});
 				_ -> ignore
 			end;
 		{connect_timeout, From} ->
 			case lists:keyfind(From, 1, Queue) of
 				{From, _Timestamp} ->
-					addr_server_loop(Server, {lists:keydelete(From, 1, Queue), EstDelay*1.6, MaxDelay});
+					addr_server_loop(Server, Config, {lists:keydelete(From, 1, Queue), EstDelay*1.6, MaxDelay});
 				_ -> ignore
 			end;
 		{receive_timeout, _From} ->
@@ -155,7 +170,7 @@ addr_server_loop(Server, {Queue, EstDelay, MaxDelay}=OldContext) ->
 		Msg ->
 			io:format("addr_server: Unknown message: ~p\n", [Msg])
 	end,
-	addr_server_loop(Server, OldContext).
+	addr_server_loop(Server, Config, OldContext).
 
 adjust_queue([{SocksPid, Timestamp}|T], Now, MaxDelay) ->
 	D = Now - Timestamp,
