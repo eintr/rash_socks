@@ -2,18 +2,21 @@
 
 -export([socks4_callback/2, relay_socket/4]).
 
+-import(config, [config/2]).
+
 -include_lib("kernel/include/inet.hrl").
 
 -define(DEFAULT_PORT, 1080).
 
-socks4_callback(Client_socket, Arg) ->
+socks4_callback(Client_socket, Config) ->
 	%io:format("Got a connection.\n"),
-	socks4_protocol(Client_socket, Arg).
+	ServerConfig = config(inet:peernamed(Client_socket), Config),
+	socks4_protocol(Client_socket, Config).
 
-socks4_protocol(Client_socket, Arg) ->
-	socks4_protocol(recv_request, Client_socket, Arg, []).
+socks4_protocol(Client_socket, Config) ->
+	socks4_protocol(recv_request, Client_socket, Config, []).
 
-socks4_protocol(recv_request, Client_socket, Arg, Context) ->
+socks4_protocol(recv_request, Client_socket, Config, Context) ->
 	%io:format("recv_request"),
 	{ok, Head} = gen_tcp:recv(Client_socket, 8),
 	case Head of
@@ -23,7 +26,7 @@ socks4_protocol(recv_request, Client_socket, Arg, Context) ->
 			% OK
 			Uid = case get_seg(Client_socket) of
 				{error, Reason} ->
-					socks4_protocol(term, Client_socket, Arg, Context++[{log, Reason}]);
+					socks4_protocol(term, Client_socket, Config, Context++[{log, Reason}]);
 				Ret ->
 					Ret
 			end,
@@ -31,102 +34,102 @@ socks4_protocol(recv_request, Client_socket, Arg, Context) ->
 				{0, 0, 0, 1} ->
 					DomainName = get_seg(Client_socket),
 					%io:format("DomainName=~s\n", [DomainName]),
-					socks4_protocol(name_resolv, Client_socket, Arg, Context++[{dport, Dport}, {domainname, DomainName}, {uid, Uid}]);
+					socks4_protocol(name_resolv, Client_socket, Config, Context++[{dport, Dport}, {domainname, DomainName}, {uid, Uid}]);
 				Daddr ->
 					%io:format(": Dport=~b, Daddr=~p, Uid=~p\n", [Dport, Daddr, Uid]),
-					socks4_protocol(try_connect, Client_socket, Arg, Context++[{dport, Dport}, {daddr, Daddr}, {uid, Uid}])
+					socks4_protocol(try_connect, Client_socket, Config, Context++[{dport, Dport}, {daddr, Daddr}, {uid, Uid}])
 			end;
 		<<VN:8, CD:8, Dport:16/big-unsigned-integer, A:8, B:8, C:8, D:8, Uid:16/big-unsigned-integer>> ->
 			io:format("Unknown request: VN=~b, CD=~b, Dport=~b, Daddr=~b.~b.~b.~b, Uid=~p\n", [VN, CD, Dport, A, B, C, D, Uid])
 	end;
 
-socks4_protocol(name_resolv, Client_socket, Arg, Context) ->
-	case inet_res:gethostbyname(context_get(domainname, Context)) of
+socks4_protocol(name_resolv, Client_socket, Config, Context) ->
+	case inet_res:gethostbyname(config(domainname, Context)) of
 		{ok, Hostent} ->
 			[Daddr|_] = Hostent#hostent.h_addr_list,
-			socks4_protocol(try_connect, Client_socket, Arg, Context++[{daddr, Daddr}]);
+			socks4_protocol(try_connect, Client_socket, Config, Context++[{daddr, Daddr}]);
 		{error, Reason} ->
-			socks4_protocol(term, Client_socket, Arg, Context++[{error, Reason}])
+			socks4_protocol(term, Client_socket, Config, Context++[{error, Reason}])
 	end;
 
-socks4_protocol(try_connect, Client_socket, Arg, Context) ->
-	Dsockaddr = {context_get(daddr, Context), context_get(dport, Context)},
+socks4_protocol(try_connect, Client_socket, Config, Context) ->
+	Dsockaddr = {config(daddr, Context), config(dport, Context)},
 	%io:format("try_connect to ~p ... ", [Dsockaddr]),
 	case queuectl:connect_request(Dsockaddr) of
 		true ->
-			case gen_tcp:connect(context_get(daddr, Context), context_get(dport, Context), [{active, false}, binary], 3000) of
+			case gen_tcp:connect(config(daddr, Context), config(dport, Context), [{active, false}, binary], 3000) of
 				{ok, Socket} ->
 					queuectl:connect_ok(Dsockaddr),
 					%io:format("ok!\n"),
-					socks4_protocol(send_grant, Client_socket, Arg, Context++[{server, Socket}]);
+					socks4_protocol(send_grant, Client_socket, Config, Context++[{server, Socket}]);
 				{error, timeout} ->
 					queuectl:connect_timeout(Dsockaddr),
 					%io:format("timedout!\n"),
-					socks4_protocol(send_reject, Client_socket, Arg, Context++[{reason, "timedout"}]);
+					socks4_protocol(send_reject, Client_socket, Config, Context++[{reason, "timedout"}]);
 				{error, Reason} ->
 					queuectl:connect_fail(Dsockaddr),
 					%io:format("failed!\n"),
-					socks4_protocol(send_reject, Client_socket, Arg, Context++[{reason, Reason}])
+					socks4_protocol(send_reject, Client_socket, Config, Context++[{reason, Reason}])
 			end;
 		false ->
 			io:format("Connection to ~p rejected by queue ctl.\n", [Dsockaddr]),
-			socks4_protocol(send_reject, Client_socket, Arg, Context++[{reason, "Queue control reject"}])
+			socks4_protocol(send_reject, Client_socket, Config, Context++[{reason, "Queue control reject"}])
 	end;
 	
-socks4_protocol(send_grant, Client_socket, Arg, Context) ->
+socks4_protocol(send_grant, Client_socket, Config, Context) ->
 	%io:format("send_grant\n"),
-	Dport = context_get(dport, Context),
-	{A, B, C, D} = context_get(daddr, Context),
+	Dport = config(dport, Context),
+	{A, B, C, D} = config(daddr, Context),
 	Reply = <<0:8, 90:8, Dport:16/big-unsigned-integer, A:8, B:8, C:8, D:8>>,
 	gen_tcp:send(Client_socket, Reply),
-	socks4_protocol(relay, Client_socket, Arg, Context);
+	socks4_protocol(relay, Client_socket, Config, Context);
 
-socks4_protocol(send_reject, Client_socket, Arg, Context) ->
+socks4_protocol(send_reject, Client_socket, Config, Context) ->
 	%io:format("send_reject\n"),
-	Dport = context_get(dport, Context),
-	{A, B, C, D} = context_get(daddr, Context),
+	Dport = config(dport, Context),
+	{A, B, C, D} = config(daddr, Context),
 	Reply = <<0:8, 92:8, Dport:16/big-unsigned-integer, A:8, B:8, C:8, D:8>>,
 	gen_tcp:send(Client_socket, Reply),
-	socks4_protocol(term, Client_socket, Arg, Context);
+	socks4_protocol(term, Client_socket, Config, Context);
 
-socks4_protocol(relay, Client_socket, Arg, Context) ->
+socks4_protocol(relay, Client_socket, Config, Context) ->
 	%io:format("relaying: ~p\n", [Context]),
-	PID1 = spawn(?MODULE, relay_socket, [Client_socket, context_get(server, Context), Arg, self()]),
-	PID2 = spawn(?MODULE, relay_socket, [context_get(server, Context), Client_socket, Arg, self()]),
-	socks4_protocol(relay_loop, Client_socket, Arg, Context ++ [{worker1, PID1}, {worker2, PID2}]);
+	PID1 = spawn(?MODULE, relay_socket, [Client_socket, config(server, Context), Config, self()]),
+	PID2 = spawn(?MODULE, relay_socket, [config(server, Context), Client_socket, Config, self()]),
+	socks4_protocol(relay_loop, Client_socket, Config, Context ++ [{worker1, PID1}, {worker2, PID2}]);
 
-socks4_protocol(relay_loop, Client_socket, Arg, Context) ->
-	Worker1 = context_get(worker1, Context),
-	Worker2 = context_get(worker2, Context),
+socks4_protocol(relay_loop, Client_socket, Config, Context) ->
+	Worker1 = config(worker1, Context),
+	Worker2 = config(worker2, Context),
 	if
 		(Worker1 == over) and (Worker2 == over) ->
-			socks4_protocol(term, Client_socket, Arg, Context);
+			socks4_protocol(term, Client_socket, Config, Context);
 		true ->
 			receive
 				{over, Worker1, Reason} ->
 					io:format("relayerror: ~p\n", [Reason]),
-					socks4_protocol(term, Client_socket, Arg, lists:keyreplace(worker1, 1, Context, {worker1, over}));
+					socks4_protocol(term, Client_socket, Config, lists:keyreplace(worker1, 1, Context, {worker1, over}));
 				{over, Worker2, Reason} ->
 					io:format("relayerror: ~p\n", [Reason]),
-					socks4_protocol(term, Client_socket, Arg, lists:keyreplace(worker2, 1, Context, {worker1, over}));
+					socks4_protocol(term, Client_socket, Config, lists:keyreplace(worker2, 1, Context, {worker1, over}));
 				_ ->
-					socks4_protocol(term, Client_socket, Arg, Context)
+					socks4_protocol(term, Client_socket, Config, Context)
 			end
 	end;
 
-socks4_protocol(term, _Client_socket, _Arg, _Context) ->
+socks4_protocol(term, _Client_socket, _Config, _Context) ->
 	%io:format("terminating\n"),
 	% TODO: Do some log if needed.
 	ok.
 
-relay_socket(Socket1, Socket2, Arg, PPID) ->
+relay_socket(Socket1, Socket2, Config, PPID) ->
 	case gen_tcp:recv(Socket1, 0) of
 		{ok, Data} ->
 			%io:format("Received: ~p, ", [Data]),
 			case gen_tcp:send(Socket2, Data) of
 				ok ->
 					%io:format("Sent: ~p\n", [Data]),
-					relay_socket(Socket1, Socket2, Arg, PPID);
+					relay_socket(Socket1, Socket2, Config, PPID);
 				{error, closed} ->
 					PPID ! {over, self()};
 				{error, Reason} ->
@@ -150,13 +153,5 @@ get_seg(Socket, Seg) ->
 			get_seg(Socket, Seg++binary_to_list(Byte));
 		{error, Reason} ->
 			{error, Reason}
-	end.
-
-context_get(Key, Context) ->
-	case lists:keyfind(Key, 1, Context) of
-		{Key, Value} ->
-			Value;
-		_ ->
-			false
 	end.
 
