@@ -25,6 +25,9 @@ loop(Dict, Config) ->
 					From ! {error, "Not found"},
 					loop(Dict, Config)
 			end;
+		{enum_all, From} ->
+			From ! {enum_all, dict:map(fun(Addr, Pid)->{Addr, Pid} end, Dict)},
+			loop(Dict, Config);
 		{create, From, Addr} ->
 			case dict:find(Addr, Dict) of
 				{ok, _Pid} ->
