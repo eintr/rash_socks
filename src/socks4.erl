@@ -10,7 +10,6 @@
 
 socks4_callback(Client_socket, Config) ->
 	%io:format("Got a connection.\n"),
-	ServerConfig = config(inet:peernamed(Client_socket), Config),
 	socks4_protocol(Client_socket, Config).
 
 socks4_protocol(Client_socket, Config) ->
@@ -94,8 +93,9 @@ socks4_protocol(send_reject, Client_socket, Config, Context) ->
 
 socks4_protocol(relay, Client_socket, Config, Context) ->
 	%io:format("relaying: ~p\n", [Context]),
-	PID1 = spawn(?MODULE, relay_socket, [Client_socket, config(server, Context), Config, self()]),
-	PID2 = spawn(?MODULE, relay_socket, [config(server, Context), Client_socket, Config, self()]),
+	{_, ServerRTO, ServerSTO} = config:addr_config({config(daddr, Context), config(dport, Context)}, Config),
+	PID1 = spawn(?MODULE, relay_socket, [Client_socket, config(server, Context), {-1, -1, ServerSTO}, self()]),
+	PID2 = spawn(?MODULE, relay_socket, [config(server, Context), Client_socket, {-1, ServerRTO, -1}, self()]),
 	socks4_protocol(relay_loop, Client_socket, Config, Context ++ [{worker1, PID1}, {worker2, PID2}]);
 
 socks4_protocol(relay_loop, Client_socket, Config, Context) ->
@@ -122,8 +122,27 @@ socks4_protocol(term, _Client_socket, _Config, _Context) ->
 	% TODO: Do some log if needed.
 	ok.
 
-relay_socket(Socket1, Socket2, Config, PPID) ->
+relay_socket(Socket1, Socket2, {_CTO, 0, _STO}=Config, PPID) ->
 	case gen_tcp:recv(Socket1, 0) of
+		{ok, Data} ->
+			%io:format("Received: ~p, ", [Data]),
+			case gen_tcp:send(Socket2, Data) of
+				ok ->
+					%io:format("Sent: ~p\n", [Data]),
+					relay_socket(Socket1, Socket2, Config, PPID);
+				{error, closed} ->
+					PPID ! {over, self()};
+				{error, Reason} ->
+					io:format("Sent error: ~s\n", [Reason]),
+					PPID ! {over, self(), Reason}
+			end;
+		{error, closed} ->
+			PPID ! {over, self()};
+		{error, Reason} ->
+			PPID ! {over, self(), Reason}
+	end;
+relay_socket(Socket1, Socket2, {_CTO, RTO, _STO}=Config, PPID) ->
+	case gen_tcp:recv(Socket1, 0, RTO) of
 		{ok, Data} ->
 			%io:format("Received: ~p, ", [Data]),
 			case gen_tcp:send(Socket2, Data) of
