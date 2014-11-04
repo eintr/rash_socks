@@ -113,7 +113,7 @@ addr_server_start(Server, Config) ->
 	process_flag(priority, high),
 	addr_server_loop(Server, Config, {[], 1, config:addr_config(Server, Config)}).
 
-addr_server_loop(Server, Config, {Queue, EstDelay, {MaxCDelay, MaxRDealy, MaxSDelay}=MaxDelay}=OldContext) ->
+addr_server_loop(Server, Config, {Queue, EstDelay, {MaxCDelay, _MaxRDealy, _MaxSDelay}=MaxDelay}=OldContext) ->
 	%io:format("Server ~p: EstDelay=~p, queuelen=~p\n", [Server, EstDelay, length(Queue)]),
 	receive
 		{report, From} ->
@@ -135,6 +135,7 @@ addr_server_loop(Server, Config, {Queue, EstDelay, {MaxCDelay, MaxRDealy, MaxSDe
 					addr_server_loop(Server, Config, OldContext);
 				true ->
 					From ! true,	% Server is OK
+					arange_adjust(MaxCDelay),
 					addr_server_loop(Server, Config, {Queue++[{From, timestamp()}], EstDelay, MaxDelay})
 			end;
 		{connect_ok, From} ->
@@ -175,7 +176,14 @@ addr_server_loop(Server, Config, {Queue, EstDelay, {MaxCDelay, MaxRDealy, MaxSDe
 	end,
 	addr_server_loop(Server, Config, OldContext).
 
-adjust_queue([{SocksPid, Timestamp}|T], Now, {MaxCDelay, MaxRDealy, MaxSDelay}=MaxDelay) ->
+arange_adjust(0) ->
+	true;
+arange_adjust(MaxCDelay) ->
+	timer:send_after(MaxCDelay, {adjust, ignored}).
+
+adjust_queue([], _, _) ->
+	[];
+adjust_queue([{SocksPid, Timestamp}|T], Now, {MaxCDelay, _MaxRDealy, _MaxSDelay}=MaxDelay) ->
 	D = Now - Timestamp,
 	if
 		D > MaxCDelay ->	% Expired.
