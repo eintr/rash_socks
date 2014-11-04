@@ -188,7 +188,7 @@ adjust_queue([{SocksPid, Timestamp}|T], Now, {MaxCDelay, _MaxRDealy, _MaxSDelay}
 	if
 		D > MaxCDelay ->	% Expired.
 			exit(SocksPid ,"Connecting was timed out"),
-			adjust_queue([T], Now, MaxDelay);
+			adjust_queue(T, Now, MaxDelay);
 		true ->
 			T
 	end.
