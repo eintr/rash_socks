@@ -111,9 +111,9 @@ report_status(Server) ->
 
 addr_server_start(Server, Config) ->
 	process_flag(priority, high),
-	addr_server_loop(Server, Config, {[], 1, 3000}).
+	addr_server_loop(Server, Config, {[], 1, config:addr_config(Server, Config)}).
 
-addr_server_loop(Server, Config, {Queue, EstDelay, MaxDelay}=OldContext) ->
+addr_server_loop(Server, Config, {Queue, EstDelay, {MaxCDelay, MaxRDealy, MaxSDelay}=MaxDelay}=OldContext) ->
 	%io:format("Server ~p: EstDelay=~p, queuelen=~p\n", [Server, EstDelay, length(Queue)]),
 	receive
 		{report, From} ->
@@ -130,7 +130,7 @@ addr_server_loop(Server, Config, {Queue, EstDelay, MaxDelay}=OldContext) ->
 				EstDelay < 0 ->		% Server is unavailable.
 					From ! false,
 					addr_server_loop(Server, Config, OldContext);
-				EstDelay*length(Queue) > MaxDelay ->	% Queue is too long.
+				EstDelay*length(Queue) > MaxCDelay ->	% Queue is too long.
 					From ! false,
 					addr_server_loop(Server, Config, OldContext);
 				true ->
@@ -175,10 +175,10 @@ addr_server_loop(Server, Config, {Queue, EstDelay, MaxDelay}=OldContext) ->
 	end,
 	addr_server_loop(Server, Config, OldContext).
 
-adjust_queue([{SocksPid, Timestamp}|T], Now, MaxDelay) ->
+adjust_queue([{SocksPid, Timestamp}|T], Now, {MaxCDelay, MaxRDealy, MaxSDelay}=MaxDelay) ->
 	D = Now - Timestamp,
 	if
-		D > MaxDelay ->	% Expired.
+		D > MaxCDelay ->	% Expired.
 			exit(SocksPid ,"Connecting was timed out"),
 			adjust_queue([T], Now, MaxDelay);
 		true ->
