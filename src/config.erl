@@ -8,7 +8,7 @@
 	{admin_port, 8972},
 	{shortlist_size, 256},
 	{servers, [
-		{'*', {2000, 3000, 2000}}	]}	]).
+		{'*', {2000, 0, 0}}	]}	]).
 
 -include_lib("kernel/include/inet.hrl").
 
@@ -19,17 +19,32 @@ config(Key, Config) ->
     end.
 
 addr_config(Address, Config) ->
+	%io:format("Searching server ~p in ~p\n", [Address, config(servers, Config)]),
 	addr_config_find(Address, config(servers, Config)).
 
+addr_config_find(_, false) ->
+	{2000, 0, 0};
 addr_config_find(_, []) ->
-	{2000, 3000, 2000};
+	{2000, 0, 0};
 addr_config_find({Ip, Port}=Address, [{{Prefix, Port}, Conf}| Tail]) ->
+	%io:format("try ~p...", [{{Prefix, Port}, Conf}]),
 	case cidr:match(Ip, Prefix) of
 		true ->
 			Conf;
 		false ->
 			addr_config_find(Address, Tail)
-	end.
+	end;
+addr_config_find({Ip, Port}=Address, [{{Prefix, 0}, Conf}| Tail]) ->
+	%io:format("try ~p...", [{{Prefix, 0}, Conf}]),
+	case cidr:match(Ip, Prefix) of
+		true ->
+			Conf;
+		false ->
+			addr_config_find(Address, Tail)
+	end;
+addr_config_find({Ip, Port}=Address, [{{Prefix, CPort}, Conf}| Tail]) ->
+	%io:format("ignore ~p...", [{{Prefix, CPort}, Conf}]),
+	addr_config_find(Address, Tail).
 
 kvlist_merge([], Background) ->
 	Background;
@@ -46,7 +61,7 @@ load_conf(Filename) ->
 	%io:format("Combined with default: ~p\n", [Conf]),
 	Servers_conf = server_conf_process(config(servers, Conf)),
 	Ret = lists:keyreplace(servers, 1, Conf, {servers, Servers_conf}),
-	%io:format("After process: ~p\n", [Ret]),
+	io:format("Config loaded: ~p\n", [Ret]),
 	Ret.
 
 % Reserve these lines for supporting domain name in the future.
