@@ -1,6 +1,6 @@
 -module(rash_socks).
 
--export([start/0]).
+-export([start/0, start/1]).
 
 -import(config, [config/2]).
 
