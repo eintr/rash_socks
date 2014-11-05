@@ -1,6 +1,6 @@
 -module(config).
 
--export([default/0, config/2, load_conf/1, addr_config/2]).
+-export([config/2, load_conf/1, addr_config/2]).
 
 -define(DEFAULT_CONFIG, [
 	{port, 10800},
@@ -19,11 +19,10 @@ config(Key, Config) ->
     end.
 
 addr_config(Address, Config) ->
-	%io:format("Searching server ~p in ~p\n", [Address, config(servers, Config)]),
 	addr_config_find(Address, config(servers, Config)).
 
-addr_config_find(_, false) ->
-	{2000, 0, 0};
+%addr_config_find(_, false) ->
+%	{2000, 0, 0};
 addr_config_find(_, []) ->
 	{2000, 0, 0};
 addr_config_find({Ip, Port}=Address, [{{Prefix, Port}, Conf}| Tail]) ->
@@ -51,8 +50,8 @@ kvlist_merge([], Background) ->
 kvlist_merge([{K, V}|T], Background) ->
 	kvlist_merge(T, lists:keystore(K, 1, Background, {K, V})).
 
-default() ->
-	?DEFAULT_CONFIG.
+%default() ->
+%	?DEFAULT_CONFIG.
 
 load_conf(Filename) ->
 	{ok, Value} = file:script(Filename),
@@ -61,7 +60,7 @@ load_conf(Filename) ->
 	%io:format("Combined with default: ~p\n", [Conf]),
 	Servers_conf = server_conf_process(config(servers, Conf)),
 	Ret = lists:keyreplace(servers, 1, Conf, {servers, Servers_conf}),
-	io:format("Config loaded: ~p\n", [Ret]),
+	%io:format("Config loaded: ~p\n", [Ret]),
 	Ret.
 
 % Reserve these lines for supporting domain name in the future.
