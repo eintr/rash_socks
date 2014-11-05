@@ -1,0 +1,11 @@
+#!/bin/sh
+
+#
+# Usage: rash_socks_start [ConfigFile]
+#
+
+cd __PREFIX__/ebin
+
+ulimit -n 100000
+exec erl +K true -s rash_socks start $1 -detached
+

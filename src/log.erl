@@ -2,6 +2,8 @@
 
 -export([create/1, log/2, log/3]).
 
+-include("config.hrl").
+
 -import(config, [config/2]).
 
 -author("牛海青<nhf0424@gmail.com>").
@@ -9,7 +11,7 @@
 -export([log_center_start/2]).
 
 create(Config) ->
-	Path = config(log_file, Config),
+	Path = ?PREFIX++config(log_file, Config),
 	case file:open(Path, [append, {encoding, utf8}, sync]) of
 		{ok, LogFile} ->
 			register(log_center, spawn_link(?MODULE, id_log_start, [LogFile, Config]));

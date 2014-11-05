@@ -2,6 +2,8 @@
 
 -export([config/2, load_conf/1, addr_config/2]).
 
+-include("config.hrl").
+
 -define(DEFAULT_CONFIG, [
 	{port, 10800},
 	{addr, "0.0.0.0"},
@@ -21,8 +23,6 @@ config(Key, Config) ->
 addr_config(Address, Config) ->
 	addr_config_find(Address, config(servers, Config)).
 
-%addr_config_find(_, false) ->
-%	{2000, 0, 0};
 addr_config_find(_, []) ->
 	{2000, 0, 0};
 addr_config_find({Ip, Port}=Address, [{{Prefix, Port}, Conf}| Tail]) ->
@@ -49,10 +49,7 @@ kvlist_merge([], Background) ->
 kvlist_merge([{K, V}|T], Background) ->
 	kvlist_merge(T, lists:keystore(K, 1, Background, {K, V})).
 
-%default() ->
-%	?DEFAULT_CONFIG.
-
-load_conf(Filename) ->
+load_conf([$/|_]=Filename) ->
 	{ok, Value} = file:script(Filename),
 	%io:format("Raw: ~p\n", [Value]),
 	Conf = kvlist_merge(Value, ?DEFAULT_CONFIG),
@@ -60,7 +57,9 @@ load_conf(Filename) ->
 	Servers_conf = server_conf_process(config(servers, Conf)),
 	Ret = lists:keyreplace(servers, 1, Conf, {servers, Servers_conf}),
 	%io:format("Config loaded: ~p\n", [Ret]),
-	Ret.
+	Ret;
+load_conf(Filename) ->
+	load_conf(?PREFIX++Filename).
 
 % Reserve these lines for supporting domain name in the future.
 %inet_ptoerl({_A, _B, _C, _D}=Arg) ->
