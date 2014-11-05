@@ -8,7 +8,7 @@
 
 -define(DEFAULT_PORT, 1080).
 
-socks4_callback(Client_socket, Config) ->
+socks4_callback(Client_socket, [Config]) ->
 	%io:format("Got a connection.\n"),
 	socks4_protocol(Client_socket, Config).
 
