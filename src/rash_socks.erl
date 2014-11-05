@@ -23,9 +23,9 @@ admin_start(Socket, Config) ->
 admin_loop(Socket, Config) ->
 	case gen_tcp:accept(Socket) of
 		{ok, Client} ->
-			log(log_info, "Admin client = ~p\n", [inet:peername(Client)]),
 			case get_request(Client) of
 				{ok, Req} ->
+					log(log_info, "Admin request from ~p: ~p", [inet:peername(Client), Req]),
 					gen_tcp:send(Socket, admin_process(Req)),
 					admin_loop(Socket, Config);
 				{error, Reason} ->
