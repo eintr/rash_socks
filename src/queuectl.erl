@@ -1,5 +1,7 @@
 -module(queuectl).
 
+-import(log, [log/2, log/3]).
+
 -export([create/1, report_status/1, connect_request/1, connect_ok/1, connect_fail/1, connect_timeout/1]).
 
 -export([addr_server_start/2, start/1]).
@@ -12,16 +14,14 @@ start(Config) ->
 	loop(dict:new(), Config).
 
 loop(Dict, Config) ->
-	%io:format("qdict is now: ~p\n", [Dict]),
 	receive
 		{addr2pid, From, Addr} ->
 			case dict:find(Addr, Dict) of
 				{ok, Pid} ->
 					From ! {ok, Pid},
-					%io:format("~p is at ~p\n", [Addr, Pid]),
 					loop(Dict, Config);
 				error ->
-					%io:format("~p is not registered!\n", [Addr]),
+					log(log_warning, "addr_server for ~p is not registered!\n", [Addr]),
 					From ! {error, "Not found"},
 					loop(Dict, Config)
 			end;
@@ -30,24 +30,23 @@ loop(Dict, Config) ->
 			loop(Dict, Config);
 		{create, From, Addr} ->
 			case dict:find(Addr, Dict) of
-				{ok, _Pid} ->
-					%io:format("addr_server for ~p is already running: ~p.\n", [Addr, Pid]),
+				{ok, Pid} ->
+					log(log_warning, "addr_server for ~p is already running: ~p.\n", [Addr, Pid]),
 					loop(Dict, Config);
-				error ->
-					%io:format("~p is not registered!\n", [Addr]),
+				error ->	% This is the normal case.
 					Pid = spawn(?MODULE, addr_server_start, [Addr, Config]),
 					From ! ok,
 					loop(dict:store(Addr, Pid, Dict), Config)
 			end;
 		{register, _From, {Addr, Pid}} ->
-			%io:format("Got register message, store {~p, ~p}\n", [Addr, Pid]),
+			log(log_debug, "Got register message, store {~p, ~p}\n", [Addr, Pid]),
 			loop(dict:store(Addr, Pid, Dict), Config);
 		{unregister, _From, Addr} ->
 			loop(dict:erase(Addr, Dict), Config)
 	end.
 
 connect_ok(Key) ->
-	%io:format("Reporting: Server ~p is connected.\n", [Key]),
+	log(log_debug, "Server ~p is connected.", [Key]),
 	qdict ! {addr2pid, self(), Key},
 	receive
 		{ok, Pid} ->
@@ -58,7 +57,7 @@ connect_ok(Key) ->
 	true.
 
 connect_fail(Key) ->
-	%io:format("connect_fail(~p)\n", [Key]),
+	log(log_debug, "Server ~p connect_fail.", [Key]),
 	qdict ! {addr2pid, self(), Key},
 	receive
 		{ok, Pid} ->
@@ -69,7 +68,7 @@ connect_fail(Key) ->
 	true.
 
 connect_timeout(Key) ->
-	%io:format("connect_timeout(~p)\n", [Key]),
+	log(log_debug, "Server ~p connect_timeout.", [Key]),
 	qdict ! {addr2pid, self(), Key},
 	receive
 		{ok, Pid} ->
@@ -80,7 +79,7 @@ connect_timeout(Key) ->
 	true.
 
 connect_request(Key) ->
-	%io:format("connect_request(~p)\n", [Key]),
+	log(log_debug, "Server ~p is requesting connection.", [Key]),
 	qdict ! {addr2pid, self(), Key},
 	receive
 		{ok, Pid} ->
@@ -114,7 +113,6 @@ addr_server_start(Server, Config) ->
 	addr_server_loop(Server, Config, {[], 1, config:addr_config(Server, Config)}).
 
 addr_server_loop(Server, Config, {Queue, EstDelay, {MaxCDelay, _MaxRDealy, _MaxSDelay}=MaxDelay}=OldContext) ->
-	%io:format("Server ~p: EstDelay=~p, queuelen=~p\n", [Server, EstDelay, length(Queue)]),
 	receive
 		{report, From} ->
 			From ! {Server, {Queue, EstDelay, MaxDelay}},
@@ -149,8 +147,8 @@ addr_server_loop(Server, Config, {Queue, EstDelay, {MaxCDelay, _MaxRDealy, _MaxS
 							NextDelay = Delay
 					end,
 					addr_server_loop(Server, Config, {lists:keydelete(From, 1, Queue), NextDelay, MaxDelay});
-				false -> 
-					io:format("Process ~p is not found in queue of ~p, ignored\n", [From, Server]),
+				false ->
+					log(log_warning, "Process ~p is not found in queue of ~p, ignored\n", [From, Server]),
 					ignore
 			end;
 		{connect_fail, From} ->
@@ -166,13 +164,13 @@ addr_server_loop(Server, Config, {Queue, EstDelay, {MaxCDelay, _MaxRDealy, _MaxS
 				_ -> ignore
 			end;
 		{receive_timeout, _From} ->
-			io:format("addr_server: receive_timeout not implemented, yet.\n");
+			log(log_warning, "addr_server: receive_timeout not implemented, yet.");
 		{send_timeout, _From} ->
-			io:format("addr_server: send_timeout not implemented, yet.\n");
+			log(log_warning, "addr_server: send_timeout not implemented, yet.");
 		{closed, _From} ->
-			io:format("addr_server: closed not implemented, yet.\n");
+			log(log_warning, "addr_server: closed not implemented, yet.");
 		Msg ->
-			io:format("addr_server: Unknown message: ~p\n", [Msg])
+			log(log_warning, "addr_server: Unknown message: ~p\n", [Msg])
 	end,
 	addr_server_loop(Server, Config, OldContext).
 

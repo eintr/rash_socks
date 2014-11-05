@@ -33,7 +33,7 @@ addr_config_find({Ip, Port}=Address, [{{Prefix, Port}, Conf}| Tail]) ->
 		false ->
 			addr_config_find(Address, Tail)
 	end;
-addr_config_find({Ip, Port}=Address, [{{Prefix, 0}, Conf}| Tail]) ->
+addr_config_find({Ip, _}=Address, [{{Prefix, 0}, Conf}| Tail]) ->
 	%io:format("try ~p...", [{{Prefix, 0}, Conf}]),
 	case cidr:match(Ip, Prefix) of
 		true ->
@@ -41,8 +41,7 @@ addr_config_find({Ip, Port}=Address, [{{Prefix, 0}, Conf}| Tail]) ->
 		false ->
 			addr_config_find(Address, Tail)
 	end;
-addr_config_find({Ip, Port}=Address, [{{Prefix, CPort}, Conf}| Tail]) ->
-	%io:format("ignore ~p...", [{{Prefix, CPort}, Conf}]),
+addr_config_find(Address, [_|Tail]) ->
 	addr_config_find(Address, Tail).
 
 kvlist_merge([], Background) ->

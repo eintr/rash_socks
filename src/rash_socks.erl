@@ -3,6 +3,7 @@
 -export([start/0, start/1]).
 
 -import(config, [config/2]).
+-import(log, [log/2, log/3]).
 
 start() ->
 	start(config:default()).
@@ -10,6 +11,7 @@ start(ConfigFile) ->
 	main(config:load_conf(ConfigFile)).
 
 main(Config) ->
+	log:create(Config),
 	queuectl:create(Config),
 	simple_tcp_server:create({config(addr, Config), config(port, Config), []}, {socks4, socks4_callback, [Config]}),
 	{ok, Socket} = gen_tcp:listen(config(admin_port, Config), [inet, {active, true}, {packet, http}, {reuseaddr, true}]),
@@ -21,13 +23,13 @@ admin_start(Socket, Config) ->
 admin_loop(Socket, Config) ->
 	case gen_tcp:accept(Socket) of
 		{ok, Client} ->
-			io:format("Admin client = ~p\n", [inet:peername(Client)]),
+			log(log_info, "Admin client = ~p\n", [inet:peername(Client)]),
 			case get_request(Client) of
 				{ok, Req} ->
 					gen_tcp:send(Socket, admin_process(Req)),
 					admin_loop(Socket, Config);
 				{error, Reason} ->
-					io:format("Error: ~s\n", [Reason]),
+					log(log_info, "Error: ~s\n", [Reason]),
 					admin_loop(Socket, Config)
 			end;
 		_ ->
@@ -46,21 +48,21 @@ get_request(Socket, {Method, Uri, Headers}) ->
 		{http, Socket, http_eoh} ->
 			{ok, {Method, Uri, Headers}};
 		{inet, tcp_closed} ->
-			io:format("Error: Incompleted header.\n"),
+			log(log_error, "Error: Incompleted header."),
 			{error, "Error: Incompleted header"};
 		Unknown ->
-			io:format("Unknown: ~p\n", [Unknown]),
+			log(log_error, "Unknown: ~p\n", [Unknown]),
 			{error, "Error: http header error"}
 	end.
 
 admin_process({'GET', URI, _Headers}) ->
 	[PATH, PARAM] = string:tokens(URI, "?"),
-	io:format("Path=~p, Param=~p\n", [PATH, PARAM]),
+	log(log_info, "Path=~p, Param=~p\n", [PATH, PARAM]),
 	case PATH of
 		"/status" ->
 			admin_cmd_status(lists:map(fun(E)->[K, V]=string:tokens(E, "="),{K, V} end, string:tokens(PARAM, "&")));
 		_ ->
-			io:format("Unsupported method")
+			log(log_error, "Unsupported method")
 	end.
 
 admin_cmd_status(_Param) ->

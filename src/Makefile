@@ -1,4 +1,4 @@
-sources=queuectl.erl  simple_tcp_server.erl  socks4.erl rash_socks.erl shortlist.erl config.erl cidr.erl
+sources=queuectl.erl  simple_tcp_server.erl  socks4.erl rash_socks.erl shortlist.erl config.erl cidr.erl log.erl
 
 beams=$(sources:.erl=.beam)
 

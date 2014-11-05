@@ -3,13 +3,14 @@
 -export([socks4_callback/2, relay_socket/4]).
 
 -import(config, [config/2]).
+-import(log, [log/2, log/3]).
 
 -include_lib("kernel/include/inet.hrl").
 
 -define(DEFAULT_PORT, 1080).
 
 socks4_callback(Client_socket, [Config]) ->
-	%io:format("Got a connection.\n"),
+	log(log_debug, "Got connection."),
 	socks4_protocol(Client_socket, Config).
 
 socks4_protocol(Client_socket, Config) ->
@@ -39,7 +40,7 @@ socks4_protocol(recv_request, Client_socket, Config, Context) ->
 					socks4_protocol(try_connect, Client_socket, Config, Context++[{dport, Dport}, {daddr, Daddr}, {uid, Uid}])
 			end;
 		<<VN:8, CD:8, Dport:16/big-unsigned-integer, A:8, B:8, C:8, D:8, Uid:16/big-unsigned-integer>> ->
-			io:format("Unknown request: VN=~b, CD=~b, Dport=~b, Daddr=~b.~b.~b.~b, Uid=~p\n", [VN, CD, Dport, A, B, C, D, Uid])
+			log(log_error, "Unknown socks header: VN=~b, CD=~b, Dport=~b, Daddr=~b.~b.~b.~b, Uid=~p\n", [VN, CD, Dport, A, B, C, D, Uid])
 	end;
 
 socks4_protocol(name_resolv, Client_socket, Config, Context) ->
@@ -71,7 +72,7 @@ socks4_protocol(try_connect, Client_socket, Config, Context) ->
 					socks4_protocol(send_reject, Client_socket, Config, Context++[{reason, Reason}])
 			end;
 		false ->
-			io:format("Connection to ~p rejected by queue ctl.\n", [Dsockaddr]),
+			log(log_info, "Connection to ~p rejected by queue ctl.", [Dsockaddr]),
 			socks4_protocol(send_reject, Client_socket, Config, Context++[{reason, "Queue control reject"}])
 	end;
 	
@@ -107,10 +108,10 @@ socks4_protocol(relay_loop, Client_socket, Config, Context) ->
 		true ->
 			receive
 				{over, Worker1, Reason} ->
-					io:format("relayerror: ~p\n", [Reason]),
+					log(log_info, "Relayer C->S is over: ~p\n", [Reason]),
 					socks4_protocol(term, Client_socket, Config, lists:keyreplace(worker1, 1, Context, {worker1, over}));
 				{over, Worker2, Reason} ->
-					io:format("relayerror: ~p\n", [Reason]),
+					log(log_info, "Relayer S->C is over: ~p\n", [Reason]),
 					socks4_protocol(term, Client_socket, Config, lists:keyreplace(worker2, 1, Context, {worker1, over}));
 				_ ->
 					socks4_protocol(term, Client_socket, Config, Context)
@@ -137,7 +138,7 @@ relay_socket(Socket1, Socket2, {_CTO, 0, _STO}=Config, PPID) ->
 					PPID ! {over, self(), Reason}
 			end;
 		{error, closed} ->
-			PPID ! {over, self()};
+			PPID ! {over, self(), "EOF"};
 		{error, Reason} ->
 			PPID ! {over, self(), Reason}
 	end;
@@ -150,13 +151,13 @@ relay_socket(Socket1, Socket2, {_CTO, RTO, _STO}=Config, PPID) ->
 					%io:format("Sent: ~p\n", [Data]),
 					relay_socket(Socket1, Socket2, Config, PPID);
 				{error, closed} ->
-					PPID ! {over, self()};
+					PPID ! {over, self(), "EOF"};
 				{error, Reason} ->
 					io:format("Sent error: ~s\n", [Reason]),
 					PPID ! {over, self(), Reason}
 			end;
 		{error, closed} ->
-			PPID ! {over, self()};
+			PPID ! {over, self(), "EOF"};
 		{error, Reason} ->
 			PPID ! {over, self(), Reason}
 	end.
