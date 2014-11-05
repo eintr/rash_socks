@@ -47,7 +47,7 @@ accept_loop(ListenSocket, CallBack) ->
 	{ok, ClientSocket} = gen_tcp:accept(ListenSocket),
 	%{ok, {A, P}} = inet:peername(ClientSocket),
 	%io:format("Got a connection: ~p:~p~n", [A, P]),
-	Pid = spawn_link(?MODULE, worker_wrapper, [CallBack, ClientSocket]),
+	Pid = spawn(?MODULE, worker_wrapper, [CallBack, ClientSocket]),
 	gen_tcp:controlling_process(ClientSocket, Pid),
 	accept_loop(ListenSocket, CallBack).
 
