@@ -21,7 +21,7 @@ loop(Dict, Config) ->
 					From ! {ok, Pid},
 					loop(Dict, Config);
 				error ->
-					log(log_warning, "addr_server for ~p is not registered!\n", [Addr]),
+					log(log_debug, "addr_server for ~p is not registered!", [Addr]),
 					From ! {error, "Not found"},
 					loop(Dict, Config)
 			end;
@@ -31,7 +31,7 @@ loop(Dict, Config) ->
 		{create, From, Addr} ->
 			case dict:find(Addr, Dict) of
 				{ok, Pid} ->
-					log(log_warning, "addr_server for ~p is already running: ~p.\n", [Addr, Pid]),
+					log(log_warning, "addr_server for ~p is already running: ~p.", [Addr, Pid]),
 					loop(Dict, Config);
 				error ->	% This is the normal case.
 					Pid = spawn(?MODULE, addr_server_start, [Addr, Config]),
@@ -39,7 +39,7 @@ loop(Dict, Config) ->
 					loop(dict:store(Addr, Pid, Dict), Config)
 			end;
 		{register, _From, {Addr, Pid}} ->
-			log(log_debug, "Got register message, store {~p, ~p}\n", [Addr, Pid]),
+			log(log_debug, "Got register message, store {~p, ~p}", [Addr, Pid]),
 			loop(dict:store(Addr, Pid, Dict), Config);
 		{unregister, _From, Addr} ->
 			loop(dict:erase(Addr, Dict), Config)
@@ -148,7 +148,7 @@ addr_server_loop(Server, Config, {Queue, EstDelay, {MaxCDelay, _MaxRDealy, _MaxS
 					end,
 					addr_server_loop(Server, Config, {lists:keydelete(From, 1, Queue), NextDelay, MaxDelay});
 				false ->
-					log(log_warning, "Process ~p is not found in queue of ~p, ignored\n", [From, Server]),
+					log(log_warning, "Process ~p is not found in queue of ~p, ignored.", [From, Server]),
 					ignore
 			end;
 		{connect_fail, From} ->
@@ -170,7 +170,7 @@ addr_server_loop(Server, Config, {Queue, EstDelay, {MaxCDelay, _MaxRDealy, _MaxS
 		{closed, _From} ->
 			log(log_warning, "addr_server: closed not implemented, yet.");
 		Msg ->
-			log(log_warning, "addr_server: Unknown message: ~p\n", [Msg])
+			log(log_warning, "addr_server: Unknown message: ~p.", [Msg])
 	end,
 	addr_server_loop(Server, Config, OldContext).
 

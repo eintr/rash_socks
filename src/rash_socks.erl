@@ -24,15 +24,15 @@ admin_loop(Socket, Config) ->
 	case gen_tcp:accept(Socket) of
 		{ok, Client} ->
 			case get_request(Client) of
-				{ok, Req} ->
-					%log(log_info, "Admin request from ~p: ~p", [inet:peernames(Client), Req]),
+				{ok, {M,U,_}=Req} ->
+					log(log_info, "Admin request from ~p: ~p ~p", [inet:peernames(Client), M, U]),
 					Reply = admin_process(Req),
 					%io:format("Reply: ~p\n", [Reply]),
 					gen_tcp:send(Client, Reply),
 					gen_tcp:close(Client),
 					admin_loop(Socket, Config);
 				{error, Reason} ->
-					log(log_info, "Error: ~s\n", [Reason]),
+					log(log_info, "Error: ~s", [Reason]),
 					admin_loop(Socket, Config)
 			end;
 		_ ->
@@ -54,14 +54,14 @@ get_request(Socket, {Method, Uri, Headers}) ->
 			log(log_error, "Error: Incompleted header."),
 			{error, "Error: Incompleted header"};
 		Unknown ->
-			log(log_error, "Unknown: ~p\n", [Unknown]),
+			log(log_error, "Unknown: ~p", [Unknown]),
 			{error, "Error: http header error"}
 	end.
 
 admin_process({'GET', URI, _Headers}) ->
 	%io:format("URI=~p\n", [URI]),
 	[PATH, PARAM] = string:tokens(URI, "?"),
-	log(log_info, "Path=~p, Param=~p\n", [PATH, PARAM]),
+	%log(log_info, "Path=~p, Param=~p", [PATH, PARAM]),
 	case PATH of
 		"/status" ->
 			admin_svc_status(param_to_list(PARAM));
@@ -76,9 +76,9 @@ admin_svc_status(_Param) ->
 		Pid ! {report, self()},
 		receive
 			{{{A, B, C, D}, Port}, {Queue, EstDelay, {MaxCDelay, MaxRDelay, MaxSDelay}}} ->
-				io_lib:format("Server ~b.~b.~b.~b:~b => Configured Delay: {~p, ~p, ~p}, Queuelen: ~p, EstDelay: ~p\n", [A, B, C, D, Port, MaxCDelay, MaxRDelay, MaxSDelay, length(Queue), EstDelay]);
-			_ ->
-				io_lib:format("Server ~p => addr_server didnt response.\n", [Addr])
+				io_lib:format("Server ~b.~b.~b.~b:~b => Configured Delay: {~p, ~p, ~p}, Queuelen: ~p, EstDelay: ~pms\n", [A, B, C, D, Port, MaxCDelay, MaxRDelay, MaxSDelay, length(Queue), EstDelay])
+		after 1000 ->
+			io_lib:format("Server ~p => addr_server didnt response.\n", [Addr])
 		end
 	end,
 	qdict ! {enum_all, self()},
