@@ -12,7 +12,7 @@
 	{servers, [
 		{'*', {2000, 0, 0}}	]}	]).
 
--include_lib("kernel/include/inet.hrl").
+%-include_lib("kernel/include/inet.hrl").
 
 config(Key, Config) ->
     case lists:keyfind(Key, 1, Config) of
@@ -50,16 +50,17 @@ kvlist_merge([{K, V}|T], Background) ->
 	kvlist_merge(T, lists:keystore(K, 1, Background, {K, V})).
 
 load_conf([$/|_]=Filename) ->
+	io:format("Load config file: ~p\n", [Filename]),
 	{ok, Value} = file:script(Filename),
 	%io:format("Raw: ~p\n", [Value]),
 	Conf = kvlist_merge(Value, ?DEFAULT_CONFIG),
 	%io:format("Combined with default: ~p\n", [Conf]),
-	Servers_conf = server_conf_process(config(servers, Conf)),
-	Ret = lists:keyreplace(servers, 1, Conf, {servers, Servers_conf}),
-	%io:format("Config loaded: ~p\n", [Ret]),
-	Ret;
-load_conf(Filename) ->
-	load_conf(?PREFIX++Filename).
+	Servers_parsed = lists:keyreplace(servers, 1, Conf, {servers, server_conf_process(config(servers, Conf))}),
+	Logfile_replaced = lists:keyreplace(log_file, 1, Servers_parsed, {log_file, ?PREFIX++"/"++config(log_file, Servers_parsed)}),
+	io:format("Config loaded: ~p\n", [Logfile_replaced]),
+	Logfile_replaced;
+load_conf([Filename]) ->
+	load_conf(?PREFIX++"/"++atom_to_list(Filename)).
 
 % Reserve these lines for supporting domain name in the future.
 %inet_ptoerl({_A, _B, _C, _D}=Arg) ->

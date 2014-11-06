@@ -2,7 +2,7 @@
 
 -export([create/1, log/2, log/3]).
 
--include("config.hrl").
+%-include("config.hrl").
 
 -import(config, [config/2]).
 
@@ -11,31 +11,32 @@
 -export([log_center_start/2]).
 
 create(Config) ->
-	Path = ?PREFIX++config(log_file, Config),
+	Path = config(log_file, Config),
 	case file:open(Path, [append, {encoding, utf8}, sync]) of
 		{ok, LogFile} ->
-			register(log_center, spawn_link(?MODULE, id_log_start, [LogFile, Config]));
+			register(log_center, spawn_link(?MODULE, log_center_start, [LogFile, Config]));
 		{error, Reason} ->
+			io:format("Open log [~s] failed: ~s\n", [Path, Reason]),
 			{error, Reason}
 	end.
 
 log(Level, String) ->
-	id_log ! {log, Level, string:strip(String), []}.
+	log_center ! {log, Level, string:strip(String), []}.
 
 log(Level, Format, ArgList) ->
-	id_log ! {log, Level, string:strip(Format), ArgList}.
+	log_center ! {log, Level, string:strip(Format), ArgList}.
 
 log_center_start(LogFile, Config) ->
 	put(log_debug,	{"DEBUG", 0}),
 	put(log_info,	{"INFO", 1}),
 	put(log_notice,	{"NOTICE", 2}),
-	put(log_warning,	{"WARNING", 3}),
+	put(log_warning,{"WARNING", 3}),
 	put(log_error,	{"ERROR", 4}),
-	put(log_critical,	{"CRITICAL", 5}),
+	put(log_critical,{"CRITICAL", 5}),
 
 	LeastLevel = config(log_level, Config),
 	{_, LeastLevel_val} = get(LeastLevel),
-	log(log_info, "id_log started at level ~p.", [LeastLevel]),
+	log(log_info, "log_center started at level ~p.", [LeastLevel]),
 	log_center_loop(LogFile, LeastLevel_val, Config).
 
 log_center_loop(LogFile, LeastLevel, Config) ->

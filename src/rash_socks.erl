@@ -25,8 +25,11 @@ admin_loop(Socket, Config) ->
 		{ok, Client} ->
 			case get_request(Client) of
 				{ok, Req} ->
-					log(log_info, "Admin request from ~p: ~p", [inet:peername(Client), Req]),
-					gen_tcp:send(Socket, admin_process(Req)),
+					%log(log_info, "Admin request from ~p: ~p", [inet:peernames(Client), Req]),
+					Reply = admin_process(Req),
+					%io:format("Reply: ~p\n", [Reply]),
+					gen_tcp:send(Client, Reply),
+					gen_tcp:close(Client),
 					admin_loop(Socket, Config);
 				{error, Reason} ->
 					log(log_info, "Error: ~s\n", [Reason]),
@@ -56,32 +59,45 @@ get_request(Socket, {Method, Uri, Headers}) ->
 	end.
 
 admin_process({'GET', URI, _Headers}) ->
+	%io:format("URI=~p\n", [URI]),
 	[PATH, PARAM] = string:tokens(URI, "?"),
 	log(log_info, "Path=~p, Param=~p\n", [PATH, PARAM]),
 	case PATH of
 		"/status" ->
-			admin_cmd_status(lists:map(fun(E)->[K, V]=string:tokens(E, "="),{K, V} end, string:tokens(PARAM, "&")));
-		_ ->
-			log(log_error, "Unsupported method")
-	end.
+			admin_svc_status(param_to_list(PARAM));
+		SVCPATH ->
+			log(log_error, "Unsupported service path: ~p", [SVCPATH])
+	end;
+admin_process({Method, _URI, _Headers}) ->
+	log(log_error, "Unsupported method: ~p", [Method]).
 
-admin_cmd_status(_Param) ->
-	qdict ! {enum_all, self()},
+admin_svc_status(_Param) ->
 	F = fun({Addr, Pid}) ->
 		Pid ! {report, self()},
 		receive
-			{Addr, {Queue, EstDelay, MaxDelay}} ->
-				io_lib:format("~p\n", [{Addr, {Queue, EstDelay, MaxDelay}}]);
-				%mochijson2:encode([{"addr", Addr}, {"status", [{"queue_len", length(Queue)}, {"measured_delay", EstDelay}, {"max_delay", MaxDelay}]}]);
+			{{{A, B, C, D}, Port}, {Queue, EstDelay, {MaxCDelay, MaxRDelay, MaxSDelay}}} ->
+				io_lib:format("Server ~b.~b.~b.~b:~b => Configured Delay: {~p, ~p, ~p}, Queuelen: ~p, EstDelay: ~p\n", [A, B, C, D, Port, MaxCDelay, MaxRDelay, MaxSDelay, length(Queue), EstDelay]);
 			_ ->
-				io_lib:format("{~p, \"addr_server didnt response\"}", [Addr])
-				%mochijson2:encode([{"addr", Addr}, {"status", "unknown"}])
+				io_lib:format("Server ~p => addr_server didnt response.\n", [Addr])
 		end
 	end,
+	qdict ! {enum_all, self()},
 	receive
 		{enum_all, List} ->
 			lists:map(F, List);
 		_Msg ->
 			mochijson2:encode({error, "Cant enum servers"})
 	end.
+
+param_to_list(ParamStr) ->
+	F1 = fun
+		(S, Acc) ->
+			case string:tokens(S, "=") of
+				[K, V] ->
+					Acc ++ [{K, V}];
+				_ ->
+					Acc
+			end
+	end,
+	lists:foldl(F1, [], string:tokens(ParamStr, "&")).
 
