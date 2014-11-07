@@ -72,22 +72,38 @@ admin_process({Method, _URI, _Headers}) ->
 	log(log_error, "Unsupported method: ~p", [Method]).
 
 admin_svc_status(_Param) ->
-	F = fun({Addr, Pid}) ->
+	Collector = fun({Addr, Pid}) ->
 		Pid ! {report, self()},
 		receive
-			{{{A, B, C, D}, Port}, {Queue, EstDelay, {MaxCDelay, MaxRDelay, MaxSDelay}}} ->
-				io_lib:format("Server ~b.~b.~b.~b:~b => Configured Delay: {~p, ~p, ~p}, Queuelen: ~p, EstDelay: ~pms\n", [A, B, C, D, Port, MaxCDelay, MaxRDelay, MaxSDelay, length(Queue), EstDelay])
+			M -> M
 		after 1000 ->
 			io_lib:format("Server ~p => addr_server didnt response.\n", [Addr])
 		end
 	end,
+	Translater = fun({{{A, B, C, D}, Port}, {Queue, EstDelay, {MaxCDelay, MaxRDelay, MaxSDelay}}}) ->
+		io_lib:format("Server ~b.~b.~b.~b:~b => Configured Delay: {~p, ~p, ~p}, Queuelen: ~p, EstDelay: ~pms\n", [A, B, C, D, Port, MaxCDelay, MaxRDelay, MaxSDelay, length(Queue), EstDelay])
+	end,
 	qdict ! {enum_all, self()},
 	receive
 		{enum_all, List} ->
-			lists:map(F, List);
+			lists:map(Translater,
+				serverlist_sort(fun
+					({_, {_, EstDelay, _}}) -> -EstDelay end, lists:map(Collector, List)));
 		_Msg ->
-			mochijson2:encode({error, "Cant enum servers"})
+			"Cant enum servers"
 	end.
+
+serverlist_sort(nosort, List) ->
+	List;
+serverlist_sort(KeySelector, List) ->
+	KeyExtract = fun
+		(E) ->	{KeySelector(E), E}
+	end,
+	KeyStrip = fun
+		({_, E}) ->
+			E
+	end,
+	lists:map(KeyStrip, lists:keysort(1, lists:map(KeyExtract, List))).
 
 param_to_list(ParamStr) ->
 	F1 = fun
